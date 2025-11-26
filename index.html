@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hold'em Tracker</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        :root { --primary: #2c3e50; --accent: #3498db; --bg: #f4f6f8; --card: #ffffff; --border: #dfe6e9; --green: #27ae60; --red: #c0392b; --text: #2d3436; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: var(--text); }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* Layout */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: var(--card); padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .grid { display: grid; grid-template-columns: 450px 1fr; gap: 20px; }
+        @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+        .card { background: var(--card); border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; flex-direction: column; position: relative; }
+        h3 { margin-top: 0; color: var(--primary); font-size: 1.1rem; border-bottom: 2px solid var(--bg); padding-bottom: 10px; margin-bottom: 15px; }
+        
+        /* UI */
+        input, select, textarea { padding: 10px; border: 1px solid var(--border); border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-size: 14px; }
+        input[type="date"] { font-family: inherit; cursor: pointer; background-color: #fff; }
+        button { cursor: pointer; padding: 10px 16px; border-radius: 4px; border: none; font-weight: 600; transition: 0.2s; font-size: 14px; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-success { background: var(--green); color: white; width: 100%; }
+        .btn-danger { background: var(--red); color: white; width: 100%; margin-top: 5px; }
+        .btn-danger-sm { background: var(--red); color: white; padding: 4px 8px; font-size: 12px; }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        .btn-dark { background: var(--primary); color: white; }
+        .file-label { display: inline-block; padding: 10px 12px; background: var(--primary); color: white; border-radius: 4px; cursor: pointer; font-size: 0.9rem; box-sizing: border-box; text-align: center; }
+        .file-label-secondary { background: var(--accent); }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { text-align: left; padding: 10px; background: var(--bg); color: #636e72; font-weight: 600; }
+        td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+        .val-pos { color: var(--green); font-weight: bold; }
+        .val-neg { color: var(--red); font-weight: bold; }
+        .clickable-row:hover { background-color: #f0f8ff; cursor: pointer; }
+        
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-box { background: white; padding: 25px; border-radius: 8px; width: 350px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 1.1rem; }
+        .stat-label { color: #7f8c8d; }
+        .stat-value { font-weight: bold; }
+
+        /* Tabs & Charts */
+        .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 15px; }
+        .tab { padding: 10px 15px; cursor: pointer; color: #636e72; font-size: 0.9rem; }
+        .tab.active { border-bottom: 2px solid var(--accent); color: var(--accent); font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* Fixed Alignment */
+        .chart-controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 5px; max-height: 200px; overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 10px; background: #fafafa; }
+        .chart-check { font-size: 0.85rem; display: flex; align-items: center; justify-content: flex-start; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; border-radius: 3px; }
+        .chart-check:hover { background-color: #e8f4fc; }
+        .chart-check input { width: auto; margin: 0 6px 0 0; flex-shrink: 0; cursor: pointer; }
+
+        .chart-wrapper { position: relative; height: 500px; width: 100%; }
+        #ocrProgress { width: 100%; background: #eee; height: 4px; margin-top: 5px; display: none; }
+        #ocrBar { height: 100%; background: var(--green); width: 0%; transition: width 0.2s; }
+        .edit-game-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+        .edit-game-row input { margin-bottom: 0; width: 80px; text-align: right; }
+        .sort-select { padding: 4px 8px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 0; width: auto; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <div class="header">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <h1>♠️ Hold'em Tracker</h1>
+            <label class="file-label">
+                📂 Upload Excel
+                <input type="file" id="xlsxFileInput" accept=".xlsx, .xls" onchange="handleExcelUpload(this)" style="display:none;">
+            </label>
+            <span id="saveStatus" style="font-size:12px; color:#27ae60; display:none;">✔ Auto-saved</span>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button class="btn-outline" onclick="resetToDefaults()">⚠ Reset</button>
+            <button class="btn-dark" onclick="downloadExcel()">⬇ Download Excel</button>
+        </div>
+    </div>
+
+    <div class="grid">
+        
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="card">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('tab-newgame')">New Game</div>
+                    <div class="tab" onclick="switchTab('tab-manage-games')">Manage</div>
+                    <div class="tab" onclick="switchTab('tab-players')">Players</div>
+                    <div class="tab" onclick="switchTab('tab-settings')">Settings</div>
+                </div>
+
+                <!-- NEW GAME -->
+                <div id="tab-newgame" class="tab-content active">
+                    <label style="font-weight:bold; font-size:12px; color:#666;">DATE</label>
+                    <input type="date" id="newGameDate">
+                    
+                    <!-- IMAGE OCR -->
+                    <div style="background: #e8f4fc; padding:15px; border-radius:6px; border:1px solid #b3d7ff; margin-bottom:15px;">
+                        <label style="font-weight:bold; font-size:12px; color:#2980b9; display:block; margin-bottom:8px;">📷 SCAN IMAGE</label>
+                        <label class="file-label file-label-secondary" style="width:100%;">Select Screenshot
+                            <input type="file" id="ocrInput" accept="image/*" onchange="processImage(this)" style="display:none;">
+                        </label>
+                        <div id="ocrStatus" style="font-size:11px; color:#666; margin-top:8px; text-align:center;"></div>
+                        <div id="ocrProgress"><div id="ocrBar"></div></div>
+                        <div id="ocrVerification" style="display:none; margin-top:10px; background:white; padding:10px; border-radius:4px;">
+                            <div id="ocrResultList" style="max-height:200px; overflow-y:auto; margin-bottom:10px;"></div>
+                            <button class="btn-success" style="margin-top:5px;" onclick="addOcrToDraft()">Confirm</button>
+                            <button class="btn-outline" style="margin-top:5px; width:100%; border:none;" onclick="cancelOcr()">Cancel</button>
+                        </div>
+                    </div>
+
+                    <!-- MANUAL -->
+                    <div style="background: #f9f9f9; padding:10px; border-radius:6px; border:1px solid #eee; margin-bottom:15px;">
+                        <label style="font-weight:bold; font-size:12px; color:#666;">MANUAL ADD</label>
+                        <div style="display:flex; gap:5px; margin-bottom:5px;">
+                            <input list="playerOptions" id="inputPlayerName" placeholder="Name">
+                            <datalist id="playerOptions"></datalist>
+                        </div>
+                        <div style="display:flex; gap:5px;">
+                            <input type="number" id="inputPlayerScore" placeholder="Score">
+                            <button class="btn-primary" style="width:60px;" onclick="addToDraft()">Add</button>
+                        </div>
+                    </div>
+
+                    <div style="border: 1px solid var(--border); border-radius: 4px; min-height: 100px; margin-bottom: 15px; background: white;">
+                        <table class="draft-table" id="draftTable">
+                            <thead><tr><th>Player</th><th>Score</th><th style="width:30px"></th></tr></thead>
+                            <tbody><tr><td colspan="3" class="empty-msg">Empty</td></tr></tbody>
+                        </table>
+                    </div>
+                    <button class="btn-success" onclick="commitSession()">💾 Save Session</button>
+                </div>
+
+                <!-- MANAGE -->
+                <div id="tab-manage-games" class="tab-content">
+                    <label style="font-weight:bold; font-size:12px; color:#666;">SELECT SESSION</label>
+                    <select id="editGameDateSelect" onchange="loadGameForEditing()"><option value="">Select...</option></select>
+                    <div id="editGameContainer" style="display:none;">
+                        <label style="font-weight:bold; font-size:12px; color:#666;">DATE</label>
+                        <input type="date" id="editGameDateInput">
+                        <div style="max-height: 250px; overflow-y: auto; margin: 15px 0; border: 1px solid #eee; padding: 5px;">
+                            <div id="editGamePlayerList"></div>
+                        </div>
+                        <div style="background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:15px;">
+                            <div style="display:flex; gap:5px;">
+                                <input list="playerOptions" id="addPlayerToOldGameName" placeholder="Name" style="margin-bottom:0;">
+                                <input type="number" id="addPlayerToOldGameScore" placeholder="Score" style="width:70px; margin-bottom:0;">
+                                <button class="btn-primary" style="width:40px; padding:0;" onclick="addPlayerToOldGame()">+</button>
+                            </div>
+                        </div>
+                        <button class="btn-success" onclick="saveGameEdits()">Update</button>
+                        <button class="btn-danger" onclick="deleteGame()">Delete</button>
+                    </div>
+                </div>
+
+                <!-- PLAYERS -->
+                <div id="tab-players" class="tab-content">
+                    <input type="text" id="searchManage" placeholder="Search..." onkeyup="renderManageList()">
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table id="manageTable">
+                            <thead><tr><th>Name</th><th>Action</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SETTINGS -->
+                <div id="tab-settings" class="tab-content">
+                    <h3>Default Data Code</h3>
+                    <p style="font-size:0.85rem; color:#666;">To hardcode data into the file (replacing the `defaultData` variable):</p>
+                    <button class="btn-primary" onclick="generateDefaultCode()">Generate Code Block</button>
+                    <textarea id="codeExportArea" style="height:150px; margin-top:10px; font-family:monospace; font-size:10px; display:none;"></textarea>
+                </div>
+            </div>
+
+            <!-- LEADERBOARD -->
+            <div class="card" style="flex:1;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--bg); padding-bottom:10px; margin-bottom:10px;">
+                    <h3>Leaderboard</h3>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <label style="font-size:11px; color:#666;">Sort by:</label>
+                        <select id="leaderboardSortSelect" class="sort-select" onchange="renderLeaderboard()">
+                            <option value="profit">Total Profit</option>
+                            <option value="winrate">Win Rate</option>
+                        </select>
+                        <label style="font-size:11px; margin-left:5px;">
+                            <input type="checkbox" id="showWinRateToggle" onchange="renderLeaderboard()"> Show WR
+                        </label>
+                    </div>
+                </div>
+                <div style="overflow-y: auto; flex:1;">
+                    <table id="leaderboardTable">
+                        <thead><tr><th>Player</th><th id="lbCol2">Total</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div style="font-size:11px; color:#999; margin-top:5px; text-align:center;">Click a player to see details</div>
+            </div>
+        </div>
+
+        <!-- Main Chart -->
+        <div class="main">
+            <div class="card" style="height: 100%; box-sizing: border-box;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3>Performance History</h3>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <label style="font-size:13px;"><input type="checkbox" id="showLegendCheckbox" onchange="updateChart()"> Legend</label>
+                        <span style="color:#ccc">|</span>
+                        <div style="font-size:12px;">
+                            <a href="#" onclick="toggleAllChart(true); return false;">Select All</a> | 
+                            <a href="#" onclick="toggleAllChart(false); return false;">Clear</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="display:grid; grid-template-columns: 1fr 20px 1fr; gap:10px; margin-bottom:5px; align-items:center;">
+                    <select id="dateRangeStart" onchange="updateChart()"></select>
+                    <div style="text-align:center;">-</div>
+                    <select id="dateRangeEnd" onchange="updateChart()"></select>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                    <span style="font-size:11px; color:#999; text-transform:uppercase; letter-spacing:1px;">SELECT PLAYERS</span>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <label style="font-size:11px; color:#666;">Order:</label>
+                        <select id="chartSortSelect" class="sort-select" onchange="renderChartControls()">
+                            <option value="profit_desc">Profit (High → Low)</option>
+                            <option value="profit_asc">Profit (Low → High)</option>
+                            <option value="games_desc">Games (Most → Least)</option>
+                            <option value="games_asc">Games (Least → Most)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="chart-controls" id="chartToggles"></div>
+                <div class="chart-wrapper"><canvas id="profitChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PLAYER MODAL -->
+<div id="playerModal" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <h2 id="modalName" style="margin-top:0; color:var(--primary); border-bottom:2px solid var(--accent); padding-bottom:10px;"></h2>
+        <div class="stat-row"><span class="stat-label">Games Played:</span><span class="stat-value" id="modalGames"></span></div>
+        <div class="stat-row"><span class="stat-label">Total Profit:</span><span class="stat-value" id="modalTotal"></span></div>
+        <div class="stat-row"><span class="stat-label">Win Rate (Avg/Game):</span><span class="stat-value" id="modalWinRate"></span></div>
+        <button class="btn-success" onclick="closeModal()" style="margin-top:20px;">Close</button>
+    </div>
+</div>
+
+<script>
+    // --- STATE & DEFAULT ---
+    let appData = { dates: [], players: [] };
+    let sessionDraft = [];
+    let chartInstance = null;
+    const STORAGE_KEY = 'holdem_tracker_data_v16';
+    
+    // Embedded data 
+    const defaultData = 
+[["Player","25/02/22","25/03/01","25/03/02","25/03/08","25/03/09","25/03/15","25/03/22","25/03/23","25/03/29","25/03/30","25/04/05","25/04/06","25/04/12","25/04/13","25/04/18","25/04/20","25/04/26","25/04/27","25/05/04","25/05/11","25/05/17","25/05/18","25/05/24","25/05/25","25/06/01","25/06/14","25/06/21","25/06/22","25/06/28","25/06/29","25/07/04","25/07/12","25/07/19","25/07/20","25/07/26","25/07/27","25/08/01","25/08/02","25/08/08","25/08/09","25/08/15","25/08/16","25/08/29","25/08/30","25/09/05","25/09/06","25/09/13","25/09/19","25/09/27","25/10/03","25/10/05","25/10/11","25/10/17","25/10/24","25/10/30","25/11/01","25/11/14","25/11/15","25/11/21","25/11/22","Total"],["李浩然",-400,724,156,-88,335,230,-430,120,370,5,null,-230,80,-165,-675,null,255,-265,100,-225,875,1120,null,null,-115,-240,790,-280,-285,65,-390,125,-268,240,-70,53,90,-30,417,440,10,285,-636,-112,-429,500,280,0,500,330,325,275,220,0,532,-675,1100,0,0,120,5059],["毛姐",367,645,985,-400,700,900,0,110,17,170,null,-239,null,-140,null,null,null,null,null,null,0,-376,null,null,0,-260,0,0,-200,0,-160,66,0,2,-150,85,230,-240,495,16,50,16,0,0,0,170,null,-15,485,null,null,null,null,0,330,0,240,55,0,30,3984],["馒头",null,null,null,null,null,null,null,null,null,1544,null,null,null,null,null,null,null,null,null,329,null,1450,560,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,3883],["KS",null,null,null,null,-60,500,600,260,360,330,147,40,100,-390,null,null,-200,300,1100,330,-600,330,-850,-190,-490,200,200,-25,-350,580,400,-284,-425,220,400,-310,-200,120,110,270,180,-170,-470,480,950,-332,-462,-300,-140,-248,286,630,-50,200,340,-850,-910,1000,200,-140,2717],["LHC",null,null,null,1095,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,1095],["小陈",-22,null,null,null,null,null,null,null,null,null,null,null,null,null,null,900,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,878],["Elvin",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,70,-394,166,-230,25,625,450,-276,570,-278,728],["Allen",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,985,-440,null,null,null,null,null,545],["Iris",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,255,null,119,null,null,null,null,289,null,null,null,null,null,null,null,-34,null,-90,539],["777",750,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,493,null,null,null,null,null,-1000,null,-40,null,650,null,-200,null,null,null,null,null,null,36,22,-175,null,null,null,null,null,null,536],["Jack",null,null,null,1709,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-190,null,null,-726,-151,null,-130,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,512],["zt",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,450,null,null,null,null,null,null,null,null,null,null,null,null,null,450],["Kelly",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,200,null,null,null,null,205,null,null,null,null,null,null,null,null,null,null,null,null,405],["Icey",-135,null,null,null,null,null,null,null,null,null,580,0,-205,null,110,-592,-370,119,null,null,-390,null,74,599,84,null,null,null,null,null,156,-300,null,307,null,16,null,400,null,310,null,-431,null,520,null,-200,-382,null,-341,null,null,-170,null,null,210,710,null,null,-478,188,389],["czr",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,370,null,null,null,null,null,null,null,null,null,null,null,null,null,370],["VC",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,354,0,null,null,354],["天贾",null,null,131,null,null,-30,-38,null,null,null,-800,null,null,210,-182,null,null,null,null,null,320,null,null,null,null,null,null,null,null,100,null,-245,null,-234,null,null,null,771,null,-130,null,800,null,-683,null,80,-880,300,-94,null,183,-200,null,null,null,700,null,-130,null,280,229],["Kevin",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,147,null,null,null,null,null,null,null,null,null,null,147],["莎莎",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,108,null,null,null,null,null,null,null,null,null,null,null,null,null,108],["徐揍",null,-879,-200,-1400,-668,520,-600,310,-796,-482,-400,190,25,-150,-177,1000,550,-240,-700,380,75,100,-173,-90,-35,130,110,-400,700,343,281,375,750,425,300,170,600,150,450,-416,300,-135,250,-565,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-22],["Icey朋友",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-200,null,null,null,null,null,-200],["园子",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-200,null,null,null,-200],["小念",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-358,20,null,null,null,null,null,null,-338],["xgu",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,57,-400,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-343],["mashny",null,null,null,null,null,null,-400,null,null,null,null,null,null,null,null,null,null,null,30,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-370],["雨",null,-227,530,884,-463,-760,null,null,300,-37,500,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,330,-1221,-607,-450,-100,null,348,640,-505,295,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-543],["harry",null,null,null,null,null,null,null,null,-400,-194,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-594],["gui",null,null,null,null,null,null,null,-400,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-205,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-605],["Nick",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-535,null,null,null,null,null,null,null,80,null,-200,-655],["小马",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-800,null,null,null,null,null,null,null,null,null,-800],["Ricky",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-805,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-805],["Alice",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-30,null,-184,null,null,-600,null,null,null,null,null,null,null,null,null,null,-814],["mash",null,null,null,null,null,null,255,null,null,null,null,null,null,null,null,null,null,null,-1080,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-825],["Miley",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-510,-524,-695,138,90,-1501],["Ling",null,null,null,null,null,null,null,null,156,-972,null,null,null,null,null,null,null,null,290,null,null,-704,null,null,166,690,-700,855,375,null,-142,null,500,-80,null,-514,-292,null,null,null,null,null,-22,null,null,-568,null,-200,null,400,null,null,null,null,null,null,-510,null,-400,null,-1672],["Ashlyn",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-64,-177,null,-800,-800,null,null,null,null,null,-1841],["Krystal",-213,-303,-510,-200,370,160,null,null,null,-439,null,null,null,null,null,null,null,null,null,-68,null,null,null,-114,null,null,null,-100,null,null,295,103,-280,null,-670,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-1969],["Eason",410,75,-515,-1000,-15,-450,-287,null,24,null,-250,85,0,120,0,435,565,295,450,-190,-280,-1194,450,0,265,-555,500,-50,-290,-360,-440,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-2202],["Max",-757,-200,-831,-600,-199,null,900,-400,-56,null,450,154,0,null,970,-1200,-400,-215,null,-556,0,null,90,0,255,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,-2595],["Quinn",null,165,254,null,null,-1069,null,null,null,null,-227,null,null,515,-46,-600,null,null,null,null,null,null,null,null,null,35,-900,null,50,-728,null,160,35,-880,190,500,-758,50,135,-40,-400,-365,-575,-280,95,55,700,10,-410,217,null,null,null,null,null,null,null,null,-30,null,-4142]];
+
+    window.onload = function() { 
+        const today = new Date();
+        document.getElementById('newGameDate').value = today.toISOString().split('T')[0];
+        loadDataFromStorage(); 
+    };
+
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`.tab[onclick="switchTab('${tabId}')"]`).classList.add('active');
+        document.getElementById(tabId).classList.add('active');
+    }
+
+    // --- LOCAL STORAGE ---
+    function loadDataFromStorage() {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            try { processWorkbookData(JSON.parse(stored)); } catch(e) { processWorkbookData(defaultData); }
+        } else { processWorkbookData(defaultData); }
+    }
+
+    function saveToLocalStorage() {
+        const headerRow = ["Player", ...appData.dates, "Total"];
+        const dataRows = [];
+        appData.players.forEach(p => {
+            const row = [p.name];
+            p.scores.forEach(s => row.push(s === null ? "" : s));
+            row.push(p.total);
+            dataRows.push(row);
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([headerRow, ...dataRows]));
+        const status = document.getElementById('saveStatus');
+        status.style.display = 'inline'; setTimeout(() => status.style.display = 'none', 2000);
+    }
+
+    // --- STRICT DATE FORMATTING & SORTING ---
+    
+    // Native Date Input (YYYY-MM-DD) -> Storage (YY/MM/DD)
+    function isoToStorage(isoStr) {
+        // 2025-02-01 -> 25/02/01
+        if(!isoStr) return "";
+        const parts = isoStr.split('-');
+        if(parts.length !== 3) return isoStr;
+        return `${parts[0].slice(2)}/${parts[1]}/${parts[2]}`;
+    }
+
+    // Storage (YY/MM/DD) -> Native Date Input (YYYY-MM-DD)
+    function storageToIso(str) {
+        // 25/02/01 -> 2025-02-01
+        const parts = str.split('/');
+        if(parts.length !== 3) return "";
+        let y = parts[0];
+        if(y.length === 2) y = "20" + y;
+        return `${y}-${parts[1]}-${parts[2]}`;
+    }
+
+    // STRICT PARSER: Assumes input is always Year/Month/Day (or YY/MM/DD)
+    function normalizeDate(input) {
+        // Normalize delimiters
+        let s = String(input).trim().replace(/[\.\-]/g, '/');
+        const parts = s.split('/');
+        
+        if (parts.length === 3) {
+            // STRICTLY Year, Month, Day
+            let y = parseInt(parts[0]);
+            let m = parseInt(parts[1]);
+            let d = parseInt(parts[2]);
+
+            // If year is 4 digits (2025), convert to 25. If 2 digits (25), keep as 25.
+            if (y > 1900) y = y % 100;
+            
+            return `${String(y).padStart(2,'0')}/${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}`;
+        }
+        return s; // Return raw if format is weird
+    }
+
+    function getTimestamp(yyMmDd) {
+        // Expects YY/MM/DD
+        const parts = yyMmDd.split('/');
+        if (parts.length === 3) {
+            // Create Date object (Year 20xx)
+            return new Date(`20${parts[0]}/${parts[1]}/${parts[2]}`).getTime();
+        }
+        return 0;
+    }
+
+    function sortDataByDate() {
+        const dateMap = appData.dates.map((d, i) => ({ idx: i, d: d, ts: getTimestamp(d) }));
+        dateMap.sort((a, b) => a.ts - b.ts);
+        
+        appData.dates = dateMap.map(x => x.d);
+        appData.players.forEach(p => {
+            const newScores = [];
+            dateMap.forEach(x => newScores.push(p.scores[x.idx]));
+            p.scores = newScores;
+        });
+    }
+
+    // --- DATA ---
+    function processWorkbookData(rows) {
+        if(rows.length < 2) return;
+        const headers = rows[0];
+        let dateCols = [];
+        let endIndex = headers.length;
+        const last = String(headers[headers.length-1]).toLowerCase();
+        if(last.includes('total') || last.includes('合计')) endIndex = headers.length - 1;
+
+        for(let i=1; i<endIndex; i++) {
+            let raw = String(headers[i]).trim();
+            dateCols.push({ index: i, label: normalizeDate(raw) });
+        }
+        appData.dates = dateCols.map(d => d.label);
+        appData.players = [];
+
+        for(let i=1; i<rows.length; i++) {
+            const row = rows[i];
+            const name = String(row[0] || "").trim();
+            if(!name || name.toLowerCase() === 'total' || name === 'Checksum') continue;
+            let scores = [];
+            dateCols.forEach(col => {
+                let val = row[col.index];
+                if(val === undefined || val === null || String(val).trim() === "") scores.push(null);
+                else { let n = parseFloat(val); scores.push(isNaN(n) ? 0 : n); }
+            });
+            appData.players.push({ name, scores });
+        }
+        sortDataByDate();
+        recalculateStats();
+        refreshUI();
+    }
+
+    function recalculateStats() {
+        appData.players.forEach(p => {
+            let total = 0, count = 0;
+            p.scores.forEach(s => { if(s!==null) { total+=s; count++; } });
+            p.total = total;
+            p.gamesPlayed = count;
+            p.winRate = count > 0 ? (total / count) : 0;
+            p.visible = count > 0;
+        });
+    }
+
+    // --- UI ---
+    function refreshUI() {
+        renderLeaderboard(); updatePlayerDatalist(); renderManageList(); renderChartControls(); renderEditGameSelect(); updateChart();
+    }
+
+    function renderLeaderboard() {
+        const tbody = document.querySelector('#leaderboardTable tbody');
+        const showWR = document.getElementById('showWinRateToggle').checked;
+        const sortMethod = document.getElementById('leaderboardSortSelect').value;
+        
+        document.getElementById('lbCol2').innerText = showWR ? "Win Rate" : "Total";
+        tbody.innerHTML = '';
+        
+        let sortedList = [...appData.players];
+        if(sortMethod === 'profit') sortedList.sort((a, b) => b.total - a.total);
+        else sortedList.sort((a, b) => b.winRate - a.winRate);
+
+        sortedList.forEach((p) => {
+            const originalIndex = appData.players.indexOf(p);
+            const tr = document.createElement('tr');
+            tr.className = 'clickable-row';
+            tr.onclick = () => showPlayerProfile(originalIndex);
+            
+            let val = showWR ? p.winRate.toFixed(0) : p.total;
+            let color = val >= 0 ? 'val-pos' : 'val-neg';
+            if(showWR) val = (val > 0 ? "+" : "") + val + "/g";
+
+            tr.innerHTML = `<td>${p.name} <span style="color:#999;font-size:11px">(${p.gamesPlayed})</span></td><td class="${color}">${val}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderChartControls() {
+        const c = document.getElementById('chartToggles');
+        const s = document.getElementById('dateRangeStart');
+        const e = document.getElementById('dateRangeEnd');
+        const sortMethod = document.getElementById('chartSortSelect').value;
+        
+        c.innerHTML = ''; s.innerHTML = ''; e.innerHTML = '';
+        
+        let sortedList = [...appData.players];
+        if(sortMethod === 'profit_desc') sortedList.sort((a,b) => b.total - a.total);
+        else if(sortMethod === 'profit_asc') sortedList.sort((a,b) => a.total - b.total);
+        else if(sortMethod === 'games_desc') sortedList.sort((a,b) => b.gamesPlayed - a.gamesPlayed);
+        else if(sortMethod === 'games_asc') sortedList.sort((a,b) => a.gamesPlayed - b.gamesPlayed);
+
+        sortedList.forEach(p => {
+            const idx = appData.players.indexOf(p); 
+            c.innerHTML += `<label class="chart-check"><input type="checkbox" ${p.visible?'checked':''} onchange="appData.players[${idx}].visible=this.checked;updateChart()">${p.name}</label>`;
+        });
+        appData.dates.forEach((d,i)=>{s.add(new Option(d,i));e.add(new Option(d,i))});
+        s.value=0; e.value=appData.dates.length-1;
+    }
+
+    function showPlayerProfile(index) {
+        const p = appData.players[index];
+        document.getElementById('modalName').innerText = p.name;
+        document.getElementById('modalGames').innerText = p.gamesPlayed;
+        const t = document.getElementById('modalTotal');
+        t.innerText = p.total; t.className = 'stat-value ' + (p.total>=0?'val-pos':'val-neg');
+        const w = document.getElementById('modalWinRate');
+        w.innerText = p.winRate.toFixed(1); w.className = 'stat-value ' + (p.winRate>=0?'val-pos':'val-neg');
+        document.getElementById('playerModal').style.display = 'flex';
+    }
+    function closeModal(e) { if(!e || e.target === document.getElementById('playerModal')) document.getElementById('playerModal').style.display = 'none'; }
+
+    // --- ACTIONS ---
+    function commitSession() {
+        let isoDate = document.getElementById('newGameDate').value;
+        if(!isoDate){alert("Date required");return;}
+        
+        let dStr = isoToStorage(isoDate);
+        if(appData.dates.includes(dStr)){alert("Date exists");return;}
+        if(sessionDraft.length===0){alert("Empty");return;}
+        
+        appData.dates.push(dStr);
+        const map = {}; sessionDraft.forEach(d => map[d.name] = d.score);
+        appData.players.forEach(p => p.scores.push(map[p.name]!==undefined ? map[p.name] : null));
+        Object.keys(map).forEach(n => {
+            if(!appData.players.find(p => p.name === n)) {
+                const sc = new Array(appData.dates.length-1).fill(null); sc.push(map[n]);
+                appData.players.push({name:n, scores:sc});
+            }
+        });
+        sessionDraft=[]; 
+        renderDraftTable(); sortDataByDate(); recalculateStats(); refreshUI(); saveToLocalStorage();
+    }
+
+    function saveGameEdits() {
+        const idx = document.getElementById('editGameDateSelect').value; if(idx==="")return;
+        let isoDate = document.getElementById('editGameDateInput').value;
+        if(!isoDate)return;
+        let dStr = isoToStorage(isoDate);
+        appData.dates[idx] = dStr;
+        document.querySelectorAll('.edit-score-input').forEach(i => {
+            const pIdx = i.dataset.pidx;
+            const v = parseFloat(i.value);
+            if(!isNaN(v)) appData.players[pIdx].scores[idx] = v;
+        });
+        sortDataByDate(); recalculateStats(); refreshUI(); saveToLocalStorage(); alert("Updated");
+    }
+
+    // --- HELPERS ---
+    function handleExcelUpload(input) {
+        const file = input.files[0]; if(!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const wb = XLSX.read(e.target.result, {type: 'array'});
+            const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1, raw: false});
+            processWorkbookData(json); saveToLocalStorage(); alert("Loaded!");
+        };
+        reader.readAsArrayBuffer(file);
+    }
+    function downloadExcel() {
+        // Use full YYYY/MM/DD to avoid ambiguity for future uploads
+        const fullDates = appData.dates.map(d => "20" + d); 
+        const header = ["Player", ...fullDates, "Total"];
+        const rows = appData.players.map(p => [p.name, ...p.scores.map(s=>s===null?"":s), p.total]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stats");
+        XLSX.writeFile(wb, "Holdem_Stats.xlsx");
+    }
+    function resetToDefaults() { if(confirm("Reset?")) { localStorage.removeItem(STORAGE_KEY); processWorkbookData(defaultData); }}
+    function generateDefaultCode() {
+        const headerRow = ["Player", ...appData.dates, "Total"];
+        const dataRows = appData.players.map(p => [p.name, ...p.scores.map(s=>s===null?null:s), p.total]);
+        const code = "const defaultData = " + JSON.stringify([headerRow, ...dataRows]) + ";";
+        const area = document.getElementById('codeExportArea');
+        area.style.display='block'; area.value=code; area.select(); document.execCommand("copy"); alert("Copied!");
+    }
+
+    // --- OCR & UTILS ---
+    function processImage(i){const f=i.files[0];if(!f)return;const s=document.getElementById('ocrStatus'),b=document.getElementById('ocrBar');document.getElementById('ocrVerification').style.display='none';document.getElementById('ocrProgress').style.display='block';b.style.width='0%';s.innerText="Scanning...";Tesseract.recognize(f,'chi_sim+eng',{logger:m=>{if(m.status==='recognizing text')b.style.width=(m.progress*100)+'%';}}).then(({data:{text}})=>{parseOCR(text);s.innerText="Done";})}
+    function parseOCR(t){const r=[];t.split('\n').forEach(l=>{l=l.trim();if(!l||l.includes("昵称")||l.includes("盈亏"))return;const m=l.match(/(-?\d+)$/);if(m){const s=parseInt(m[0]),n=l.split(/\s+/)[0];if(n&&!/^[\W\d]+$/.test(n))r.push({n,s})}});showOCR(r);}
+    function showOCR(r){const c=document.getElementById('ocrResultList');document.getElementById('ocrVerification').style.display='block';c.innerHTML='';r.forEach((x,i)=>{
+        let o=`<option value="${x.n}">New: ${x.n}</option>`;
+        let best=null,sc=Infinity; appData.players.forEach(p=>{const d=levenshtein(x.n.toLowerCase(),p.name.toLowerCase());if(d<sc){sc=d;best=p.name}});
+        const match = (sc<=3)?best:null;
+        appData.players.forEach(p=>o+=`<option value="${p.name}" ${p.name===match?'selected':''}>${p.name}</option>`);
+        c.innerHTML+=`<div class="ocr-review-row"><span>${x.n}</span><select id="os-${i}">${o}</select><input type="number" id="ov-${i}" value="${x.s}"></div>`;
+    })}
+    function addOcrToDraft(){document.querySelectorAll('.ocr-review-row').forEach((el,i)=>{const n=document.getElementById(`os-${i}`).value,s=parseFloat(document.getElementById(`ov-${i}`).value);if(n){const idx=sessionDraft.findIndex(d=>d.name===n);if(idx>=0)sessionDraft[idx].score=s;else sessionDraft.push({name:n,score:s})}});renderDraftTable();document.getElementById('ocrVerification').style.display='none';}
+    function cancelOcr(){document.getElementById('ocrVerification').style.display='none';}
+    function levenshtein(a,b){const m=[];for(let i=0;i<=b.length;i++)m[i]=[i];for(let j=0;j<=a.length;j++)m[0][j]=j;for(let i=1;i<=b.length;i++)for(let j=1;j<=a.length;j++)m[i][j]=b.charAt(i-1)==a.charAt(j-1)?m[i-1][j-1]:Math.min(m[i-1][j-1]+1,Math.min(m[i][j-1]+1,m[i-1][j]+1));return m[b.length][a.length]}
+    
+    // --- CHART ---
+    function updateChart() {
+        const ctx=document.getElementById('profitChart').getContext('2d');
+        const s=parseInt(document.getElementById('dateRangeStart').value), e=parseInt(document.getElementById('dateRangeEnd').value);
+        const leg=document.getElementById('showLegendCheckbox').checked;
+        const dsets=appData.players.filter(p=>p.visible).map(p=>{
+            let d=[],r=0; p.scores.forEach(v=>{if(v!==null)r+=v;d.push(r)});
+            const h=(p.name.split('').reduce((a,c)=>a+c.charCodeAt(0),0)*43)%360;
+            return {label:p.name,data:d.slice(s,e+1),borderColor:`hsl(${h},70%,50%)`,backgroundColor:`hsl(${h},70%,50%)`,fill:false,tension:0.1,pointRadius:1,pointHoverRadius:4,spanGaps:true};
+        });
+        if(chartInstance)chartInstance.destroy();
+        chartInstance=new Chart(ctx,{type:'line',data:{labels:appData.dates.slice(s,e+1),datasets:dsets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:leg,position:'bottom',labels:{boxWidth:10,font:{size:10}}}},scales:{x:{grid:{display:false}},y:{border:{dash:[4,4]}}}}});
+    }
+    
+    // Wrappers
+    function addToDraft(){const n=document.getElementById('inputPlayerName').value,s=document.getElementById('inputPlayerScore').value;if(!n||!s)return;const i=sessionDraft.findIndex(d=>d.name===n);if(i>=0)sessionDraft[i].score=parseFloat(s);else sessionDraft.push({name:n,score:parseFloat(s)});renderDraftTable();document.getElementById('inputPlayerName').value='';document.getElementById('inputPlayerScore').value='';}
+    function renderDraftTable(){const t=document.querySelector('#draftTable tbody');t.innerHTML='';if(!sessionDraft.length){t.innerHTML='<tr><td colspan="3" class="empty-msg">Empty</td></tr>';return}let sum=0;sessionDraft.forEach((d,i)=>{sum+=d.score;t.innerHTML+=`<tr><td>${d.name}</td><td class="${d.score>=0?'val-pos':'val-neg'}">${d.score}</td><td><button class="btn-danger-sm" onclick="sessionDraft.splice(${i},1);renderDraftTable()">X</button></td></tr>`});t.innerHTML+=`<tr style="background:#fafafa;font-weight:bold"><td style="text-align:right">Sum:</td><td>${sum}</td><td></td></tr>`}
+    function updatePlayerDatalist(){const l=document.getElementById('playerOptions');l.innerHTML='';appData.players.forEach(p=>l.appendChild(new Option(p.name,p.name)))}
+    function renderManageList(){const t=document.querySelector('#manageTable tbody'),q=document.getElementById('searchManage').value.toLowerCase();t.innerHTML='';appData.players.forEach((p,i)=>{if(p.name.toLowerCase().includes(q))t.innerHTML+=`<tr><td><input id="ren-${i}" value="${p.name}"></td><td style="text-align:right"><button class="btn-primary" onclick="let n=document.getElementById('ren-${i}').value;if(n){appData.players[${i}].name=n;refreshUI();saveToLocalStorage();}">Save</button></td></tr>`})}
+    function toggleAllChart(v){appData.players.forEach(p=>p.visible=v);renderChartControls();updateChart()}
+    
+    function renderEditGameSelect(){const s=document.getElementById('editGameDateSelect');s.innerHTML='<option value="">Select...</option>';appData.dates.forEach((d,i)=>s.add(new Option(d,i)))}
+    
+    function loadGameForEditing(){
+        const idx=document.getElementById('editGameDateSelect').value,c=document.getElementById('editGameContainer'),l=document.getElementById('editGamePlayerList');
+        l.innerHTML=''; if(idx===""){c.style.display='none';return} c.style.display='block';
+        document.getElementById('editGameDateInput').value = storageToIso(appData.dates[idx]);
+        appData.players.forEach((p,pi)=>{if(p.scores[idx]!==null)l.innerHTML+=`<div class="edit-game-row"><span>${p.name}</span><input type="number" value="${p.scores[idx]}" data-pidx="${pi}" class="edit-score-input"></div>`});
+    }
+    function deleteGame(){const i=document.getElementById('editGameDateSelect').value;if(i!==""&&confirm("Delete?")){appData.dates.splice(i,1);appData.players.forEach(p=>p.scores.splice(i,1));recalculateStats();refreshUI();saveToLocalStorage();alert("Deleted")}}
+    function addPlayerToOldGame(){const idx=document.getElementById('editGameDateSelect').value,n=document.getElementById('addPlayerToOldGameName').value,s=parseFloat(document.getElementById('addPlayerToOldGameScore').value);if(idx!==""&&n&&!isNaN(s)){let p=appData.players.find(x=>x.name===n);if(!p){const sc=new Array(appData.dates.length).fill(null);sc[idx]=s;appData.players.push({name:n,scores:sc})}else p.scores[idx]=s;loadGameForEditing();saveToLocalStorage()}}
+</script>
+</body>
+</html>
