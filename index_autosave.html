@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hold'em Tracker Cloud</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        :root { --primary: #2c3e50; --accent: #3498db; --bg: #f4f6f8; --card: #ffffff; --border: #dfe6e9; --green: #27ae60; --red: #c0392b; --text: #2d3436; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: var(--text); }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: var(--card); padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .grid { display: grid; grid-template-columns: 450px 1fr; gap: 20px; }
+        @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+        .card { background: var(--card); border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; flex-direction: column; position: relative; }
+        h3 { margin-top: 0; color: var(--primary); font-size: 1.1rem; border-bottom: 2px solid var(--bg); padding-bottom: 10px; margin-bottom: 15px; }
+        input, select, textarea { padding: 10px; border: 1px solid var(--border); border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 10px; font-size: 14px; }
+        input[type="date"] { font-family: inherit; cursor: pointer; background-color: #fff; }
+        button { cursor: pointer; padding: 10px 16px; border-radius: 4px; border: none; font-weight: 600; transition: 0.2s; font-size: 14px; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-success { background: var(--green); color: white; width: 100%; }
+        .btn-danger { background: var(--red); color: white; width: 100%; margin-top: 5px; }
+        .btn-danger-sm { background: var(--red); color: white; padding: 4px 8px; font-size: 12px; }
+        .btn-outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        .btn-dark { background: var(--primary); color: white; }
+        .file-label { display: inline-block; padding: 10px 12px; background: var(--primary); color: white; border-radius: 4px; cursor: pointer; font-size: 0.9rem; box-sizing: border-box; text-align: center; }
+        .file-label-secondary { background: var(--accent); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { text-align: left; padding: 10px; background: var(--bg); color: #636e72; font-weight: 600; }
+        td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+        .val-pos { color: var(--green); font-weight: bold; }
+        .val-neg { color: var(--red); font-weight: bold; }
+        .clickable-row:hover { background-color: #f0f8ff; cursor: pointer; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-box { background: white; padding: 25px; border-radius: 8px; width: 350px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 1.1rem; }
+        .stat-label { color: #7f8c8d; }
+        .stat-value { font-weight: bold; }
+        .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 15px; }
+        .tab { padding: 10px 15px; cursor: pointer; color: #636e72; font-size: 0.9rem; }
+        .tab.active { border-bottom: 2px solid var(--accent); color: var(--accent); font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .chart-controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 5px; max-height: 200px; overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 10px; background: #fafafa; }
+        .chart-check { font-size: 0.85rem; display: flex; align-items: center; justify-content: flex-start; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; border-radius: 3px; }
+        .chart-check:hover { background-color: #e8f4fc; }
+        .chart-check input { width: auto; margin: 0 6px 0 0; flex-shrink: 0; cursor: pointer; }
+        .chart-wrapper { position: relative; height: 500px; width: 100%; }
+        #ocrProgress { width: 100%; background: #eee; height: 4px; margin-top: 5px; display: none; }
+        #ocrBar { height: 100%; background: var(--green); width: 0%; transition: width 0.2s; }
+        .edit-game-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+        .edit-game-row input { margin-bottom: 0; width: 80px; text-align: right; }
+        .sort-select { padding: 4px 8px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 0; width: auto; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <h1>♠️ Hold'em Tracker</h1>
+            <span id="saveStatus" style="font-size:12px; color:#27ae60; display:none;">✔ Saved</span>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button class="btn-dark" onclick="downloadExcel()">⬇ Excel</button>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="sidebar">
+            <div class="card">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('tab-newgame')">New Game</div>
+                    <div class="tab" onclick="switchTab('tab-manage-games')">Manage</div>
+                    <div class="tab" onclick="switchTab('tab-players')">Players</div>
+                    <div class="tab" onclick="switchTab('tab-settings')">Settings</div>
+                </div>
+
+                <!-- NEW GAME -->
+                <div id="tab-newgame" class="tab-content active">
+                    <label style="font-weight:bold; font-size:12px; color:#666;">DATE</label>
+                    <input type="date" id="newGameDate">
+                    
+                    <div style="background: #e8f4fc; padding:15px; border-radius:6px; border:1px solid #b3d7ff; margin-bottom:15px;">
+                        <label style="font-weight:bold; font-size:12px; color:#2980b9; display:block; margin-bottom:8px;">📷 SCAN IMAGE</label>
+                        <label class="file-label file-label-secondary" style="width:100%;">Select Screenshot
+                            <input type="file" id="ocrInput" accept="image/*" onchange="processImage(this)" style="display:none;">
+                        </label>
+                        <div id="ocrStatus" style="font-size:11px; color:#666; margin-top:8px; text-align:center;"></div>
+                        <div id="ocrProgress"><div id="ocrBar"></div></div>
+                        <div id="ocrVerification" style="display:none; margin-top:10px; background:white; padding:10px; border-radius:4px;">
+                            <div id="ocrResultList" style="max-height:200px; overflow-y:auto; margin-bottom:10px;"></div>
+                            <button class="btn-success" style="margin-top:5px;" onclick="addOcrToDraft()">Confirm</button>
+                            <button class="btn-outline" style="margin-top:5px; width:100%; border:none;" onclick="cancelOcr()">Cancel</button>
+                        </div>
+                    </div>
+
+                    <div style="background: #f9f9f9; padding:10px; border-radius:6px; border:1px solid #eee; margin-bottom:15px;">
+                        <label style="font-weight:bold; font-size:12px; color:#666;">MANUAL ADD</label>
+                        <div style="display:flex; gap:5px; margin-bottom:5px;">
+                            <input list="playerOptions" id="inputPlayerName" placeholder="Name">
+                            <datalist id="playerOptions"></datalist>
+                        </div>
+                        <div style="display:flex; gap:5px;">
+                            <input type="number" id="inputPlayerScore" placeholder="Score">
+                            <button class="btn-primary" style="width:60px;" onclick="addToDraft()">Add</button>
+                        </div>
+                    </div>
+
+                    <div style="border: 1px solid var(--border); border-radius: 4px; min-height: 100px; margin-bottom: 15px; background: white;">
+                        <table class="draft-table" id="draftTable">
+                            <thead><tr><th>Player</th><th>Score</th><th style="width:30px"></th></tr></thead>
+                            <tbody><tr><td colspan="3" class="empty-msg">Empty</td></tr></tbody>
+                        </table>
+                    </div>
+                    <button class="btn-success" onclick="commitSession()">💾 Save Session</button>
+                </div>
+
+                <!-- MANAGE -->
+                <div id="tab-manage-games" class="tab-content">
+                    <label style="font-weight:bold; font-size:12px; color:#666;">SELECT SESSION</label>
+                    <select id="editGameDateSelect" onchange="loadGameForEditing()"><option value="">Select...</option></select>
+                    <div id="editGameContainer" style="display:none;">
+                        <label style="font-weight:bold; font-size:12px; color:#666;">DATE</label>
+                        <input type="date" id="editGameDateInput">
+                        <div style="max-height: 250px; overflow-y: auto; margin: 15px 0; border: 1px solid #eee; padding: 5px;">
+                            <div id="editGamePlayerList"></div>
+                        </div>
+                        <div style="background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:15px;">
+                            <div style="display:flex; gap:5px;">
+                                <input list="playerOptions" id="addPlayerToOldGameName" placeholder="Name" style="margin-bottom:0;">
+                                <input type="number" id="addPlayerToOldGameScore" placeholder="Score" style="width:70px; margin-bottom:0;">
+                                <button class="btn-primary" style="width:40px; padding:0;" onclick="addPlayerToOldGame()">+</button>
+                            </div>
+                        </div>
+                        <button class="btn-success" onclick="saveGameEdits()">Update</button>
+                        <button class="btn-danger" onclick="deleteGame()">Delete</button>
+                    </div>
+                </div>
+
+                <!-- PLAYERS -->
+                <div id="tab-players" class="tab-content">
+                    <input type="text" id="searchManage" placeholder="Search..." onkeyup="renderManageList()">
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table id="manageTable">
+                            <thead><tr><th>Name</th><th>Action</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SETTINGS -->
+                <div id="tab-settings" class="tab-content">
+                    <h3>Cloud Sync (GitHub)</h3>
+                    <p style="font-size:0.85rem; color:#666;">
+                        Enter your GitHub Personal Access Token to enable auto-saving to the cloud. 
+                        If empty, the app runs in "Read-Only" mode using public data.
+                    </p>
+                    <input type="password" id="ghTokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" onchange="saveToken()">
+                    <button class="btn-success" onclick="fetchFromGitHub()">Test Connection & Sync</button>
+                    <p style="font-size:11px; color:#666; margin-top:10px;">Only the Admin needs this token. Viewers don't need to do anything.</p>
+                </div>
+            </div>
+
+            <!-- LEADERBOARD -->
+            <div class="card" style="flex:1;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--bg); padding-bottom:10px; margin-bottom:10px;">
+                    <h3>Leaderboard</h3>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <select id="leaderboardSortSelect" class="sort-select" onchange="renderLeaderboard()">
+                            <option value="profit">Total Profit</option>
+                            <option value="winrate">Win Rate</option>
+                        </select>
+                        <label style="font-size:11px; margin-left:5px;">
+                            <input type="checkbox" id="showWinRateToggle" onchange="renderLeaderboard()"> Show WR
+                        </label>
+                    </div>
+                </div>
+                <div style="overflow-y: auto; flex:1;">
+                    <table id="leaderboardTable">
+                        <thead><tr><th>Player</th><th id="lbCol2">Total</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Chart -->
+        <div class="main">
+            <div class="card" style="height: 100%; box-sizing: border-box;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3>Performance History</h3>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <label style="font-size:13px;"><input type="checkbox" id="showLegendCheckbox" onchange="updateChart()"> Legend</label>
+                        <span style="color:#ccc">|</span>
+                        <div style="font-size:12px;">
+                            <a href="#" onclick="toggleAllChart(true); return false;">Select All</a> | 
+                            <a href="#" onclick="toggleAllChart(false); return false;">Clear</a>
+                        </div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 20px 1fr; gap:10px; margin-bottom:5px; align-items:center;">
+                    <select id="dateRangeStart" onchange="updateChart()"></select>
+                    <div style="text-align:center;">-</div>
+                    <select id="dateRangeEnd" onchange="updateChart()"></select>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                    <span style="font-size:11px; color:#999; text-transform:uppercase; letter-spacing:1px;">SELECT PLAYERS</span>
+                    <select id="chartSortSelect" class="sort-select" onchange="renderChartControls()">
+                        <option value="profit_desc">Profit (High → Low)</option>
+                        <option value="profit_asc">Profit (Low → High)</option>
+                        <option value="games_desc">Games (Most → Least)</option>
+                        <option value="games_asc">Games (Least → Most)</option>
+                    </select>
+                </div>
+                <div class="chart-controls" id="chartToggles"></div>
+                <div class="chart-wrapper"><canvas id="profitChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PLAYER MODAL -->
+<div id="playerModal" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <h2 id="modalName" style="margin-top:0; color:var(--primary); border-bottom:2px solid var(--accent); padding-bottom:10px;"></h2>
+        <div class="stat-row"><span class="stat-label">Games Played:</span><span class="stat-value" id="modalGames"></span></div>
+        <div class="stat-row"><span class="stat-label">Total Profit:</span><span class="stat-value" id="modalTotal"></span></div>
+        <div class="stat-row"><span class="stat-label">Win Rate:</span><span class="stat-value" id="modalWinRate"></span></div>
+        <button class="btn-success" onclick="closeModal()" style="margin-top:20px;">Close</button>
+    </div>
+</div>
+
+<script>
+    // --- CONFIGURATION ---
+    const GITHUB_USERNAME = "YourGitHubUsername"; // CHANGE THIS to your username
+    const GITHUB_REPO = "poker-tracker";          // CHANGE THIS to your repo name
+    const GITHUB_FILE_PATH = "data.json";   
+    const BRANCH = "main";                  
+
+    // --- STATE ---
+    let appData = { dates: [], players: [] };
+    let sessionDraft = [];
+    let chartInstance = null;
+    let githubToken = localStorage.getItem("github_token") || "";
+    let fileSha = ""; // Needed for GitHub API updates
+
+    window.onload = function() { 
+        document.getElementById('newGameDate').value = new Date().toISOString().split('T')[0];
+        document.getElementById('ghTokenInput').value = githubToken; // Pre-fill if exists
+        fetchFromGitHub(); 
+    };
+
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`.tab[onclick="switchTab('${tabId}')"]`).classList.add('active');
+        document.getElementById(tabId).classList.add('active');
+    }
+
+    // --- GITHUB SYNC LOGIC ---
+    function saveToken() {
+        githubToken = document.getElementById('ghTokenInput').value.trim();
+        localStorage.setItem("github_token", githubToken);
+    }
+
+    async function fetchFromGitHub() {
+        // If no token, fetch raw public file
+        if(!githubToken) {
+            console.log("Fetching public data...");
+            const rawUrl = `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${GITHUB_REPO}/${BRANCH}/${GITHUB_FILE_PATH}`;
+            try {
+                const res = await fetch(rawUrl);
+                if(!res.ok) throw new Error("Data file not found");
+                const data = await res.json();
+                processWorkbookData(data);
+            } catch(e) { console.error(e); alert("Could not load data. Check console."); }
+            return;
+        }
+
+        // If token exists, fetch via API to get SHA
+        const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${GITHUB_FILE_PATH}`;
+        try {
+            const response = await fetch(apiUrl, {
+                headers: { "Authorization": `token ${githubToken}`, "Accept": "application/vnd.github.v3+json" }
+            });
+            const json = await response.json();
+            fileSha = json.sha; // Store SHA
+            // GitHub API returns Base64, need to decode UTF-8 correctly
+            const content = decodeURIComponent(escape(window.atob(json.content)));
+            processWorkbookData(JSON.parse(content));
+            console.log("Synced via API");
+        } catch (e) {
+            console.error(e);
+            alert("Error syncing with GitHub API. Check your Token.");
+        }
+    }
+
+    async function pushToGitHub() {
+        if (!githubToken) {
+            alert("You are in Read-Only mode. Add a GitHub Token in Settings to save.");
+            return;
+        }
+
+        const headerRow = ["Player", ...appData.dates, "Total"];
+        const dataRows = appData.players.map(p => [p.name, ...p.scores.map(s => s === null ? null : s), p.total]);
+        const newData = [headerRow, ...dataRows];
+        
+        // Encode to Base64 (UTF-8 safe)
+        const content = btoa(unescape(encodeURIComponent(JSON.stringify(newData))));
+
+        const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${GITHUB_FILE_PATH}`;
+        
+        try {
+            const response = await fetch(apiUrl, {
+                method: "PUT",
+                headers: {
+                    "Authorization": `token ${githubToken}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    message: "Update stats via App",
+                    content: content,
+                    sha: fileSha, // Required to overwrite
+                    branch: BRANCH
+                })
+            });
+
+            if (response.ok) {
+                const json = await response.json();
+                fileSha = json.content.sha; // Update local SHA for next save
+                const status = document.getElementById('saveStatus');
+                status.innerHTML = "✔ Saved to Cloud";
+                status.style.display = 'inline';
+                setTimeout(() => status.style.display = 'none', 3000);
+            } else {
+                alert("GitHub Save Failed. Make sure you have Write permissions.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Network Error saving to GitHub.");
+        }
+    }
+
+    // --- STANDARD LOGIC (Parsing, Sorting, UI) ---
+    function isoToStorage(isoStr) { if(!isoStr) return ""; const p = isoStr.split('-'); return `${p[0].slice(2)}/${p[1]}/${p[2]}`; }
+    function storageToIso(str) { const p = str.split('/'); return `20${p[0]}-${p[1]}-${p[2]}`; }
+    function normalizeDate(input) { let s=String(input).trim().replace(/[\.\-]/g,'/'); const p=s.split('/'); if(p.length===3){let y=parseInt(p[0]),m=parseInt(p[1]),d=parseInt(p[2]); if(y>1900)y=y%100; return `${String(y).padStart(2,'0')}/${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}`;} return s; }
+    function getTimestamp(d) { const p=d.split('/'); return new Date(`20${p[0]}/${p[1]}/${p[2]}`).getTime(); }
+    
+    function sortDataByDate() {
+        const map = appData.dates.map((d,i)=>({i, d, ts:getTimestamp(d)}));
+        map.sort((a,b)=>a.ts-b.ts);
+        appData.dates = map.map(x=>x.d);
+        appData.players.forEach(p=>{
+            const ns=[]; map.forEach(x=>ns.push(p.scores[x.i])); p.scores=ns;
+        });
+    }
+
+    function processWorkbookData(rows) {
+        if(rows.length < 2) return;
+        const headers = rows[0];
+        let dateCols = [];
+        let endIndex = headers.length;
+        const last = String(headers[headers.length-1]).toLowerCase();
+        if(last.includes('total')||last.includes('合计')) endIndex = headers.length - 1;
+
+        for(let i=1; i<endIndex; i++) {
+            dateCols.push({ index: i, label: normalizeDate(String(headers[i]).trim()) });
+        }
+        appData.dates = dateCols.map(d => d.label);
+        appData.players = [];
+
+        for(let i=1; i<rows.length; i++) {
+            const row = rows[i];
+            const name = String(row[0]||"").trim();
+            if(!name || name==='Total') continue;
+            let scores = [];
+            dateCols.forEach(col => {
+                let val = row[col.index];
+                if(val===undefined || val===null || String(val).trim()==="") scores.push(null);
+                else { let n=parseFloat(val); scores.push(isNaN(n)?0:n); }
+            });
+            appData.players.push({name, scores});
+        }
+        sortDataByDate();
+        recalculateStats();
+        refreshUI();
+    }
+
+    function recalculateStats() {
+        appData.players.forEach(p => {
+            let t=0, c=0;
+            p.scores.forEach(s=>{ if(s!==null){t+=s; c++;}});
+            p.total=t; p.gamesPlayed=c; p.winRate=c>0?(t/c):0; p.visible=c>0;
+        });
+    }
+
+    function refreshUI() {
+        renderLeaderboard(); updatePlayerDatalist(); renderManageList(); renderChartControls(); renderEditGameSelect(); updateChart();
+    }
+
+    // --- UI FUNCTIONS ---
+    function renderLeaderboard() {
+        const tb = document.querySelector('#leaderboardTable tbody');
+        const showWR = document.getElementById('showWinRateToggle').checked;
+        const sort = document.getElementById('leaderboardSortSelect').value;
+        document.getElementById('lbCol2').innerText = showWR ? "Win Rate" : "Total";
+        tb.innerHTML = '';
+        
+        let list = [...appData.players];
+        if(sort === 'profit') list.sort((a,b)=>b.total-a.total);
+        else list.sort((a,b)=>b.winRate-a.winRate);
+
+        list.forEach(p => {
+            const origIdx = appData.players.indexOf(p);
+            let val = showWR ? p.winRate.toFixed(0) : p.total;
+            let col = val>=0?'val-pos':'val-neg';
+            tb.innerHTML += `<tr class="clickable-row" onclick="showPlayerProfile(${origIdx})"><td>${p.name} <span style="color:#999;font-size:11px">(${p.gamesPlayed})</span></td><td class="${col}">${val}</td></tr>`;
+        });
+    }
+
+    function renderChartControls() {
+        const c = document.getElementById('chartToggles');
+        const s = document.getElementById('dateRangeStart');
+        const e = document.getElementById('dateRangeEnd');
+        const sort = document.getElementById('chartSortSelect').value;
+        
+        c.innerHTML=''; s.innerHTML=''; e.innerHTML='';
+        let list = [...appData.players];
+        if(sort==='profit_desc') list.sort((a,b)=>b.total-a.total);
+        else if(sort==='profit_asc') list.sort((a,b)=>a.total-b.total);
+        else if(sort==='games_desc') list.sort((a,b)=>b.gamesPlayed-a.gamesPlayed);
+        else list.sort((a,b)=>a.gamesPlayed-b.gamesPlayed);
+
+        list.forEach(p=>{
+            const idx = appData.players.indexOf(p);
+            c.innerHTML += `<label class="chart-check"><input type="checkbox" ${p.visible?'checked':''} onchange="appData.players[${idx}].visible=this.checked;updateChart()">${p.name}</label>`;
+        });
+        appData.dates.forEach((d,i)=>{s.add(new Option(d,i));e.add(new Option(d,i));});
+        s.value=0; e.value=appData.dates.length-1;
+    }
+
+    function updateChart() {
+        const ctx=document.getElementById('profitChart').getContext('2d');
+        const s=parseInt(document.getElementById('dateRangeStart').value), e=parseInt(document.getElementById('dateRangeEnd').value);
+        const leg=document.getElementById('showLegendCheckbox').checked;
+        const dsets=appData.players.filter(p=>p.visible).map(p=>{
+            let d=[],r=0; p.scores.forEach(v=>{if(v!==null)r+=v;d.push(r)});
+            const h=(p.name.split('').reduce((a,c)=>a+c.charCodeAt(0),0)*43)%360;
+            return {label:p.name,data:d.slice(s,e+1),borderColor:`hsl(${h},70%,50%)`,backgroundColor:`hsl(${h},70%,50%)`,fill:false,tension:0.1,pointRadius:1,pointHoverRadius:4,spanGaps:true};
+        });
+        if(chartInstance)chartInstance.destroy();
+        chartInstance=new Chart(ctx,{type:'line',data:{labels:appData.dates.slice(s,e+1),datasets:dsets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:leg,position:'bottom',labels:{boxWidth:10,font:{size:10}}}},scales:{x:{grid:{display:false}},y:{border:{dash:[4,4]}}}}});
+    }
+
+    // --- ACTIONS (Modified to use pushToGitHub) ---
+    function commitSession() {
+        let iso = document.getElementById('newGameDate').value;
+        if(!iso){alert("Date required");return;}
+        let dStr = isoToStorage(iso);
+        if(appData.dates.includes(dStr)){alert("Date exists");return;}
+        if(sessionDraft.length===0){alert("Empty");return;}
+        
+        appData.dates.push(dStr);
+        const map={}; sessionDraft.forEach(d=>map[d.name]=d.score);
+        appData.players.forEach(p=>p.scores.push(map[p.name]!==undefined?map[p.name]:null));
+        Object.keys(map).forEach(n=>{
+            if(!appData.players.find(p=>p.name===n)){
+                const sc=new Array(appData.dates.length-1).fill(null); sc.push(map[n]);
+                appData.players.push({name:n,scores:sc});
+            }
+        });
+        sessionDraft=[]; renderDraftTable(); sortDataByDate(); recalculateStats(); refreshUI(); pushToGitHub();
+    }
+
+    function saveGameEdits() {
+        const idx = document.getElementById('editGameDateSelect').value; if(idx==="")return;
+        let dStr = isoToStorage(document.getElementById('editGameDateInput').value);
+        appData.dates[idx] = dStr;
+        document.querySelectorAll('.edit-score-input').forEach(i=>{
+            const pi=i.dataset.pidx, v=parseFloat(i.value);
+            if(!isNaN(v)) appData.players[pi].scores[idx]=v;
+        });
+        sortDataByDate(); recalculateStats(); refreshUI(); pushToGitHub();
+    }
+
+    function deleteGame() {
+        const idx = document.getElementById('editGameDateSelect').value;
+        if(idx!==""&&confirm("Delete?")){
+            appData.dates.splice(idx,1);
+            appData.players.forEach(p=>p.scores.splice(idx,1));
+            recalculateStats(); refreshUI(); pushToGitHub(); alert("Deleted");
+        }
+    }
+
+    function renameP(i) {
+        const n=document.getElementById(`ren-${i}`).value.trim();
+        if(n){appData.players[i].name=n; refreshUI(); pushToGitHub(); alert("Renamed");}
+    }
+
+    // --- UTILS (Draft, OCR, Download) ---
+    function addToDraft(){const n=document.getElementById('inputPlayerName').value,s=document.getElementById('inputPlayerScore').value;if(!n||!s)return;const i=sessionDraft.findIndex(d=>d.name===n);if(i>=0)sessionDraft[i].score=parseFloat(s);else sessionDraft.push({name:n,score:parseFloat(s)});renderDraftTable();document.getElementById('inputPlayerName').value='';document.getElementById('inputPlayerScore').value='';}
+    function renderDraftTable(){const t=document.querySelector('#draftTable tbody');t.innerHTML='';let s=0;sessionDraft.forEach((d,i)=>{s+=d.score;t.innerHTML+=`<tr><td>${d.name}</td><td>${d.score}</td><td><button class="btn-danger-sm" onclick="sessionDraft.splice(${i},1);renderDraftTable()">X</button></td></tr>`});}
+    function downloadExcel() {
+        const h = ["Player", ...appData.dates.map(d=>"20"+d), "Total"];
+        const r = appData.players.map(p=>[p.name,...p.scores.map(s=>s===null?"":s),p.total]);
+        const ws = XLSX.utils.aoa_to_sheet([h, ...r]);
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stats");
+        XLSX.writeFile(wb, "Holdem_Stats.xlsx");
+    }
+    
+    // OCR & Profile Logic
+    function showPlayerProfile(i){const p=appData.players[i]; document.getElementById('modalName').innerText=p.name; document.getElementById('modalGames').innerText=p.gamesPlayed; document.getElementById('modalTotal').innerText=p.total; document.getElementById('modalWinRate').innerText=p.winRate.toFixed(1); document.getElementById('playerModal').style.display='flex';}
+    function closeModal(e){if(!e||e.target===document.getElementById('playerModal'))document.getElementById('playerModal').style.display='none';}
+    function processImage(i){const f=i.files[0];if(!f)return;const s=document.getElementById('ocrStatus'),b=document.getElementById('ocrBar');document.getElementById('ocrVerification').style.display='none';document.getElementById('ocrProgress').style.display='block';b.style.width='0%';s.innerText="Scanning...";Tesseract.recognize(f,'chi_sim+eng',{logger:m=>{if(m.status==='recognizing text')b.style.width=(m.progress*100)+'%';}}).then(({data:{text}})=>{parseOCR(text);s.innerText="Done";})}
+    function parseOCR(t){const r=[];t.split('\n').forEach(l=>{l=l.trim();if(!l||l.includes("昵称")||l.includes("盈亏"))return;const m=l.match(/(-?\d+)$/);if(m){const s=parseInt(m[0]),n=l.split(/\s+/)[0];if(n&&!/^[\W\d]+$/.test(n))r.push({n,s})}});showOCR(r);}
+    function showOCR(r){const c=document.getElementById('ocrResultList');document.getElementById('ocrVerification').style.display='block';c.innerHTML='';r.forEach((x,i)=>{
+        let o=`<option value="${x.n}">New: ${x.n}</option>`;
+        let best=null,sc=Infinity; appData.players.forEach(p=>{const d=levenshtein(x.n.toLowerCase(),p.name.toLowerCase());if(d<sc){sc=d;best=p.name}});
+        const match = (sc<=3)?best:null;
+        appData.players.forEach(p=>o+=`<option value="${p.name}" ${p.name===match?'selected':''}>${p.name}</option>`);
+        c.innerHTML+=`<div class="ocr-review-row"><span>${x.n}</span><select id="os-${i}">${o}</select><input type="number" id="ov-${i}" value="${x.s}"></div>`;
+    })}
+    function addOcrToDraft(){document.querySelectorAll('.ocr-review-row').forEach((el,i)=>{const n=document.getElementById(`os-${i}`).value,s=parseFloat(document.getElementById(`ov-${i}`).value);if(n){const idx=sessionDraft.findIndex(d=>d.name===n);if(idx>=0)sessionDraft[idx].score=s;else sessionDraft.push({name:n,score:s})}});renderDraftTable();document.getElementById('ocrVerification').style.display='none';}
+    function cancelOcr(){document.getElementById('ocrVerification').style.display='none';}
+    function levenshtein(a,b){const m=[];for(let i=0;i<=b.length;i++)m[i]=[i];for(let j=0;j<=a.length;j++)m[0][j]=j;for(let i=1;i<=b.length;i++)for(let j=1;j<=a.length;j++)m[i][j]=b.charAt(i-1)==a.charAt(j-1)?m[i-1][j-1]:Math.min(m[i-1][j-1]+1,Math.min(m[i][j-1]+1,m[i-1][j]+1));return m[b.length][a.length]}
+    function updatePlayerDatalist(){const l=document.getElementById('playerOptions');l.innerHTML='';appData.players.forEach(p=>l.appendChild(new Option(p.name,p.name)))}
+    function renderManageList(){const t=document.querySelector('#manageTable tbody'),q=document.getElementById('searchManage').value.toLowerCase();t.innerHTML='';appData.players.forEach((p,i)=>{if(p.name.toLowerCase().includes(q))t.innerHTML+=`<tr><td><input id="ren-${i}" value="${p.name}"></td><td style="text-align:right"><button class="btn-primary" onclick="renameP(${i})">Save</button></td></tr>`})}
+    function renderEditGameSelect(){const s=document.getElementById('editGameDateSelect');s.innerHTML='<option value="">Select...</option>';appData.dates.forEach((d,i)=>s.add(new Option(d,i)))}
+    function loadGameForEditing(){const idx=document.getElementById('editGameDateSelect').value,c=document.getElementById('editGameContainer'),l=document.getElementById('editGamePlayerList');l.innerHTML='';if(idx===""){c.style.display='none';return}c.style.display='block';document.getElementById('editGameDateInput').value=storageToIso(appData.dates[idx]);appData.players.forEach((p,pi)=>{if(p.scores[idx]!==null)l.innerHTML+=`<div class="edit-game-row"><span>${p.name}</span><input type="number" value="${p.scores[idx]}" data-pidx="${pi}" class="edit-score-input"></div>`})}
+    function addPlayerToOldGame(){const idx=document.getElementById('editGameDateSelect').value,n=document.getElementById('addPlayerToOldGameName').value,s=parseFloat(document.getElementById('addPlayerToOldGameScore').value);if(idx!==""&&n&&!isNaN(s)){let p=appData.players.find(x=>x.name===n);if(!p){const sc=new Array(appData.dates.length).fill(null);sc[idx]=s;appData.players.push({name:n,scores:sc})}else p.scores[idx]=s;loadGameForEditing();pushToGitHub()}}
+    function toggleAllChart(v){appData.players.forEach(p=>p.visible=v);renderChartControls();updateChart()}
+</script>
+</body>
+</html>
